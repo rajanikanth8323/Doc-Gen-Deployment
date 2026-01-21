@@ -253,7 +253,7 @@ if (jurisdictions.isEmpty()) {
             complianceSection +=
                 '<p><strong>GDPR:</strong> Personal data shall be processed lawfully and transparently.</p>';
         }
-
+//com
         if (jurisdictions.contains('eIDAS')) {
             complianceSection +=
                 '<p><strong>eIDAS:</strong> Provides legal validity for electronic signatures and trust services in the EU.</p>';
