@@ -116,110 +116,241 @@ public with sharing class DocumentGenerationController {
 * @param aiClauseText Optional AI-generated text to be merged.
 * @return A PreviewResult wrapper with the rendered HTML or errors.
 */
-    @AuraEnabled
-    public static PreviewResult previewDocument(Id templateId, String jsonData, String aiClauseText) {
-        
-        System.debug('templateId::::'+templateId);
-        System.debug('jsonData::::'+jsonData);
-        System.debug('aiClauseText:::::'+aiClauseText);
-        PreviewResult result = new PreviewResult();
-        
-        // --- Input Validation ---
-        if (templateId == null) {
-            result.success = false;
-            result.validationErrors.add('Validation Error: Template ID is required.');
-            return result;
-        }
-        
-        try {
-            // --- Step 1: Securely Query the Template Record ---
-            List<DocumentTemplate__c> templates = [
-                SELECT Name, Body__c, Version__c, Region1__c, Role__c, Contract_Type__c
-                FROM DocumentTemplate__c
-                WHERE Id = :templateId
-                LIMIT 1
-            ];
-            
-            if (templates.isEmpty()) {
-                result.success = false;
-                result.validationErrors.add('Preview Error: No Document Template found with ID: ' + templateId);
-                return result;
-            }
-            
-            DocumentTemplate__c template = templates[0];
-            
-            // Assign template name to response
-            result.templateName = template.Name;
-            
-            // --- Step 2: Create a Master Data Map for All Merge Sources ---
-            Map<String, Object> masterMergeData = new Map<String, Object>();
-            
-            // Add user-provided JSON data
-            if (String.isNotBlank(jsonData)) {
-                Map<String, Object> jsonDataMap = 
-                    (Map<String, Object>) JSON.deserializeUntyped(jsonData);
-                masterMergeData.putAll(jsonDataMap);
-            }
-            
-            // Add template metadata under 'template'
-            Map<String, Object> templateData = new Map<String, Object>{
-                'Name'            => template.Name,
-                    'Version__c'      => template.Version__c,
-                    'Region1__c'       => template.Region1__c,
-                    'Role__c'         => template.Role__c,
-                    'Contract_Type__c'=> template.Contract_Type__c
-                    };
-                        masterMergeData.put('template', templateData);
-            
-            // Add AI clause text if provided
-            // =====================================================
-            // CLAUSE RESOLUTION (AI + TEMPLATE BASED)
-            // =====================================================
-            if (String.isNotBlank(aiClauseText)) {
-                // 🔹 AI TOGGLE ON → USE AI GENERATED CLAUSE
-                masterMergeData.put('aiClause', aiClauseText);
-                
-            } else {
-                // 🔹 AI TOGGLE OFF → FETCH CLAUSE FROM MASTER
-                
-                List<Clause__c> clauses = [
-                    SELECT ClauseDetails__c
-                    FROM Clause__c
-                    WHERE Region__c = :template.Region1__c
-                    AND Role__c = :template.Role__c
-                    ORDER BY CreatedDate
-                ];
-                
-                String clausestext=String.valueOf(clauses[0].ClauseDetails__c);
-                
-                masterMergeData.put(
-                    'aiClause',
-                    String.isBlank(clausestext)
-                    ? 'No clauses configured for this Region and Role.'
-                    : clausestext
-                );
-            }
-            
-            
-            // --- Step 3: Merge Everything into the Template Body ---
-            result.renderedContent = DocumentAssemblyEngine.merge1(template.Body__c, masterMergeData);
-            
-            result.success = true;
-            
-        } catch (JSONException e) {
-            result.success = false;
-            result.validationErrors.add(
-                'JSON Parsing Error: The provided data is not valid. Details: ' + e.getMessage()
-            );
-            
-        } catch (Exception e) {
-            result.success = false;
-            result.validationErrors.add('Preview Error: ' + e.getMessage());
-        }
-        system.debug('result:::::'+result);
+   @AuraEnabled
+public static PreviewResult previewDocument(
+    Id templateId,
+    String jsonData,
+    String aiClauseText,
+    String generatedDateTime
+) {
+
+    PreviewResult result = new PreviewResult();
+
+    if (templateId == null) {
+        result.success = false;
+        result.validationErrors.add('Template ID is required.');
         return result;
     }
-    
+
+    try {
+        // Fetch template
+        DocumentTemplate__c template = [
+            SELECT Name, Body__c, Version__c,
+                   Region1__c, Role__c,
+                   Contract_Type__c, Jurisdiction__c
+            FROM DocumentTemplate__c
+            WHERE Id = :templateId
+            LIMIT 1
+        ];
+
+        result.templateName = template.Name;
+
+        //  Build merge data
+        Map<String, Object> masterMergeData = new Map<String, Object>();
+
+        if (String.isNotBlank(jsonData)) {
+            masterMergeData.putAll(
+                (Map<String, Object>) JSON.deserializeUntyped(jsonData)
+            );
+        }
+
+        masterMergeData.put('template', new Map<String, Object>{
+            'Name' => template.Name,
+            'Version__c' => template.Version__c,
+            'Region1__c' => template.Region1__c,
+            'Role__c' => template.Role__c,
+            'Contract_Type__c' => template.Contract_Type__c
+        });
+
+        //  Clause resolution
+        String clausestext;
+
+        if (String.isNotBlank(aiClauseText)) {
+            clausestext = aiClauseText;
+        } else {
+            List<Clause__c> clauses = [
+                SELECT ClauseDetails__c
+                FROM Clause__c
+                WHERE Region__c = :template.Region1__c
+                AND Role__c = :template.Role__c
+                LIMIT 1
+            ];
+
+            clausestext = clauses.isEmpty()
+                ? 'No clauses configured.'
+                : clauses[0].ClauseDetails__c;
+        }
+
+        masterMergeData.put('aiClause', clausestext);
+
+        //  Merge template
+        String mergedHtml =
+            DocumentAssemblyEngine.merge1(
+                template.Body__c,
+                masterMergeData
+            );
+            List<String> jurisdictions = new List<String>();
+
+ if (String.isNotBlank(template.Jurisdiction__c)) {
+            jurisdictions = template.Jurisdiction__c.split(';');
+        } 
+        
+if (jurisdictions.isEmpty()) {
+        if (template.Region1__c == 'EU (European Union)') {
+
+        if (template.Contract_Type__c == 'Employment Agreement') {
+            jurisdictions.add('GDPR');
+            jurisdictions.add('eIDAS');
+        }
+        else if (template.Contract_Type__c == 'NDA') {
+            jurisdictions.add('GDPR');
+        }
+        else if (template.Contract_Type__c == 'Statement of work') {
+            jurisdictions.add('eIDAS');
+        }
+    }
+
+    // ================= NORTH AMERICA =================
+    else if (template.Region1__c == 'North America') {
+
+        if (template.Contract_Type__c == 'Employment Agreement') {
+            jurisdictions.add('ESIGN');
+        }
+        else if (template.Contract_Type__c == 'NDA') {
+            jurisdictions.add('ESIGN');
+        }
+        else if (template.Contract_Type__c == 'Statement of work') {
+            jurisdictions.add('ESIGN');
+        }
+
+        // 🔹 Future-ready example
+        // if healthcare contracts exist:
+        // jurisdictions.add('HIPAA');
+    }
+
+    // ================= APAC =================
+    else if (template.Region1__c == 'APAC') {
+
+        if (template.Contract_Type__c == 'Employment Agreement') {
+            jurisdictions.add('IT Act India');
+        }
+        else if (template.Contract_Type__c == 'NDA') {
+            jurisdictions.add('IT Act India');
+        }
+        else if (template.Contract_Type__c == 'Statement of work') {
+            jurisdictions.add('IT Act India');
+        }
+    }
+
+}
+
+        //  Build LEGAL compliance section (DOCUMENT TEXT)
+        String complianceSection =
+            '<h3>Data Protection & Privacy</h3>';
+
+
+        if (jurisdictions.contains('GDPR')) {
+            complianceSection +=
+                '<p><strong>GDPR:</strong> Personal data shall be processed lawfully and transparently.</p>';
+        }
+
+        if (jurisdictions.contains('eIDAS')) {
+            complianceSection +=
+                '<p><strong>eIDAS:</strong> Provides legal validity for electronic signatures and trust services in the EU.</p>';
+        }
+        if (jurisdictions.contains('ESIGN')) {
+            complianceSection +=
+                '<p><strong>ESIGN:</strong> Electronic signatures are legally valid.</p>';
+        }
+
+        if (jurisdictions.contains('IT Act India')) {
+            complianceSection +=
+                '<p><strong>IT Act 2000:</strong> Reasonable security practices shall be implemented.</p>';
+        }
+
+        if (jurisdictions.contains('HIPAA')) {
+            complianceSection +=
+                '<p><strong>HIPAA:</strong> Protected Health Information shall be safeguarded.</p>';
+        }
+
+
+//  complianceSection +=
+//             '<p><strong>This Agreement may be executed electronically and shall be legally binding in accordance with the Information Technology under Act ' +
+//             String.join(jurisdictions, ', ') +
+//             '.</strong></p>';
+
+
+complianceSection += '<p style="font-size:14px; margin-top:20px;">';
+complianceSection += '<strong>Governing Law:</strong> This Agreement shall be governed by and construed in accordance';
+complianceSection += 'with the laws applicable in the '+  String.join(jurisdictions, ', ') + ' jurisdiction, without regard to conflict of law principles. ';
+complianceSection += '</p> <br/>';
+
+    complianceSection +=   '<p style="font-size:13px; font-family: "Arial", "Helvetica", sans-serif;">';
+complianceSection += 'This Agreement may be executed electronically and shall have the same legal effect as an original signed document.';
+complianceSection += '</p>';
+
+
+        //  Insert ABOVE Terms & Conditions
+        if (mergedHtml.contains('Terms & Conditions')) {
+            mergedHtml = mergedHtml.replace(
+                'Terms & Conditions',
+                complianceSection + '<hr/>' + 'Terms & Conditions'
+            );
+        } else {
+            mergedHtml = complianceSection + mergedHtml;
+        }
+
+        // 8Compliance validation
+        List<String> complianceErrors =
+            ComplianceChecker.validateDocument(
+                mergedHtml,
+                jurisdictions,
+                template.Contract_Type__c
+            );
+
+        if (!complianceErrors.isEmpty()) {
+            result.success = false;
+            result.validationErrors.addAll(complianceErrors);
+            return result;
+        }
+
+// for document time display
+String footerHtml =
+    '<div style="' +
+    'border-top:1px solid #ddd;' +
+    'margin-top:20px;' +
+    'padding-top:6px;' +
+    'font-size:11px;' +
+    'color:#666;' +
+    'text-align:right;' +
+    '">' +
+    'Generated On: ' +
+    generatedDateTime +
+    '</div>';
+
+// Insert footer INSIDE the document (before final closing div)
+Integer lastDivIndex = mergedHtml.lastIndexOf('</div>');
+
+if (lastDivIndex > 0) {
+    mergedHtml =
+        mergedHtml.substring(0, lastDivIndex) +
+        footerHtml +
+        mergedHtml.substring(lastDivIndex);
+}
+
+
+
+        result.renderedContent = mergedHtml;
+        result.success = true;
+        return result;
+
+    } catch (Exception e) {
+        result.success = false;
+        result.validationErrors.add(e.getMessage());
+        return result;
+    }
+}
+
     
     //====================================================
     // FINAL DOCUMENT GENERATION
@@ -230,7 +361,9 @@ public with sharing class DocumentGenerationController {
         String templateId,
         String jsonData,
         String aiClauseText,
-        String selectedAIModel
+        String selectedAIModel,
+        String generatedDateTime
+        
     ) {
         FinalGenerationResult result = new FinalGenerationResult();
         
@@ -246,7 +379,7 @@ public with sharing class DocumentGenerationController {
             String decodedJsonData = jsonData.unescapeHtml4();
             
             PreviewResult preview =
-                previewDocument(templateId, decodedJsonData, aiClauseText);
+                previewDocument(templateId, decodedJsonData, aiClauseText, generatedDateTime);
             
             if (!preview.success) {
                 result.errorMessage =
@@ -329,12 +462,15 @@ public with sharing class DocumentGenerationController {
                 );
             }
             
-            Boolean isCompliant =
-                ComplianceChecker.validateClause(
-                    generatedClause,
-                    region,
-                    contractType
-                );
+         List<String> errors =
+    ComplianceChecker.validateDocument(
+        generatedClause,
+        new List<String>{ region },
+        contractType
+    );
+
+Boolean isCompliant = errors.isEmpty();
+
             
             String complianceStatus =
                 isCompliant ? 'COMPLIANT' : 'REQUIRES_REVIEW';

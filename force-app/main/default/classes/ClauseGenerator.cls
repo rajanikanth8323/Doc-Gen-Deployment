@@ -6,7 +6,7 @@
  * @last modified on : 11-25-2025
  */
 public with sharing class ClauseGenerator {
-
+//
     // =====================================================
     // STATIC CLAUSE TEMPLATES (Region + Contract Type)
     // =====================================================
