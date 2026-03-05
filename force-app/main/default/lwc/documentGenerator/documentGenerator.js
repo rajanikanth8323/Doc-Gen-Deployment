@@ -33,6 +33,9 @@ export default class DocumentGenerator extends NavigationMixin(LightningElement)
     @track newRecordId = '';
     @track newContentDocumentId = '';
 @track generatedDateTime;
+@track allTemplates = [];        // master list
+@track filteredTemplates = [];  // search result list
+@track templateSearchKey = '';
 
 
     get isStep1() { return this.currentStep === 'step1'; }
@@ -40,17 +43,25 @@ export default class DocumentGenerator extends NavigationMixin(LightningElement)
     get hasValidationErrors() { return this.validationErrors.length > 0; }
 
     // Wire to get document templates
-    @wire(getActiveTemplatesForSelection)
-    wiredTemplates({ error, data }) {
-        if (data) {
-            this.templateOptions = data.map(template => ({
-                label: template.Name,
-                value: template.Id
-            }));
-        } else if (error) {
-            this.showToast('Error', 'Failed to load templates.', 'error');
-        }
+   @wire(getActiveTemplatesForSelection)
+wiredTemplates({ error, data }) {
+    if (data) {
+        // store full template objects
+        this.allTemplates = data;
+
+        // initially show all templates
+        this.filteredTemplates = data;
+
+        // map to combobox options
+        this.templateOptions = data.map(t => ({
+            label: `${t.Name} (${t.Region1__c || 'N/A'})`,
+            value: t.Id
+        }));
+    } else if (error) {
+        this.showToast('Error', 'Failed to load templates.', 'error');
     }
+}
+
 
     // Wire to get available AI models
     @wire(getAvailableAIModels)
@@ -69,6 +80,40 @@ export default class DocumentGenerator extends NavigationMixin(LightningElement)
     handleTemplateChange(event) {
         this.selectedTemplateId = event.detail.value;
     }
+
+
+    handleTemplateSearch(event) {
+    this.templateSearchKey = event.target.value.toLowerCase();
+
+    // If search is empty → reset
+    if (!this.templateSearchKey) {
+        this.filteredTemplates = this.allTemplates;
+    } else {
+        this.filteredTemplates = this.allTemplates.filter(t => {
+            return (
+                (t.Name && t.Name.toLowerCase().includes(this.templateSearchKey)) ||
+                (t.Role__c && t.Role__c.toLowerCase().includes(this.templateSearchKey)) ||
+                (t.Contract_Type__c && t.Contract_Type__c.toLowerCase().includes(this.templateSearchKey)) ||
+                (t.Region1__c && t.Region1__c.toLowerCase().includes(this.templateSearchKey))
+            );
+        });
+    }
+
+    // Update combobox options dynamically
+    this.templateOptions = this.filteredTemplates.map(t => ({
+        label: `${t.Name} (${t.Region1__c || 'N/A'})`,
+        value: t.Id
+    }));
+
+    // Reset selection if filtered out
+    if (
+        this.selectedTemplateId &&
+        !this.filteredTemplates.some(t => t.Id === this.selectedTemplateId)
+    ) {
+        this.selectedTemplateId = '';
+    }
+}
+
 
     handleJsonChange(event) {
         this.jsonData = event.target.value;

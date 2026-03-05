@@ -49,15 +49,21 @@ public with sharing class DocumentGenerationController {
     //====================================================
     
     // No changes to this method
-    @AuraEnabled(cacheable=true)
-    public static List<DocumentTemplate__c> getActiveTemplatesForSelection() {
-        return [
-            SELECT Id, Name,Region1__c
-            FROM DocumentTemplate__c
-            WHERE IsActive__c = true
-            ORDER BY CreatedDate DESC
-        ];
-    }
+  @AuraEnabled(cacheable=true)
+public static List<DocumentTemplate__c> getActiveTemplatesForSelection() {
+    return [
+        SELECT
+            Id,
+            Name,
+            Region1__c,
+            Role__c,
+            Contract_Type__c
+        FROM DocumentTemplate__c
+        WHERE IsActive__c = true
+        ORDER BY CreatedDate DESC
+    ];
+}
+
     
     
     // Fetch available AI models
@@ -253,7 +259,7 @@ if (jurisdictions.isEmpty()) {
             complianceSection +=
                 '<p><strong>GDPR:</strong> Personal data shall be processed lawfully and transparently.</p>';
         }
-//com
+
         if (jurisdictions.contains('eIDAS')) {
             complianceSection +=
                 '<p><strong>eIDAS:</strong> Provides legal validity for electronic signatures and trust services in the EU.</p>';
@@ -273,7 +279,7 @@ if (jurisdictions.isEmpty()) {
                 '<p><strong>HIPAA:</strong> Protected Health Information shall be safeguarded.</p>';
         }
 
-
+// juris
 //  complianceSection +=
 //             '<p><strong>This Agreement may be executed electronically and shall be legally binding in accordance with the Information Technology under Act ' +
 //             String.join(jurisdictions, ', ') +

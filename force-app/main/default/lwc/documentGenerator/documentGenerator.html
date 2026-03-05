@@ -38,7 +38,22 @@
             <template if:true={isStep1}>
                 <div class="slds-p-around_large">
                     <h3 class="slds-text-heading_medium slds-m-bottom_medium">Step 1: Select Template and Data</h3>
+
+
+<!-- 🔍 Template Smart Search -->
+<lightning-input
+    type="search"
+    label="Search Templates"
+    placeholder="Search by Role, Contract Type, Region, or Template Name"
+    onchange={handleTemplateSearch}
+    class="slds-m-bottom_small">
+</lightning-input>
+
                     <!-- Document Template Selection -->
+
+
+
+
                     <lightning-combobox name="template" label="Select a Document Template" value={selectedTemplateId} placeholder="Choose a template..." options={templateOptions} onchange={handleTemplateChange} required></lightning-combobox>
                     <!-- JSON Input - Increased size -->
 <!-- This is an example of what you would have to do, it's not recommended -->
